@@ -67,12 +67,12 @@ namespace Orion.Launcher.World
             };
 
             // Replace `Terraria.Main.tile` with our own implementation which involves using the `OrionWorld` class
-            // along with an adapter for the `OTAPI.Tile.ITile` interface. This cuts down on the memory usage
+            // along with an adapter for the `Terraria.ITile` interface. This cuts down on the memory usage
             // significantly while not impacting speed very much.
             Terraria.Main.tile = new TileCollection(this);
 
-            OTAPI.Hooks.World.IO.PostLoadWorld = PostLoadWorldHandler;
-            OTAPI.Hooks.World.IO.PreSaveWorld = PreSaveWorldHandler;
+            OTAPI.Hooks.IO.WorldFile.LoadWorld = LoadWorldHandler;
+            OTAPI.Hooks.IO.WorldFile.SaveWorld = SaveWorldHandler;
 
             _events.RegisterHandlers(this, _log);
         }
@@ -138,15 +138,17 @@ namespace Orion.Launcher.World
             DisposeUnmanaged();
             GC.SuppressFinalize(this);
 
-            // HACK: replace the original `Terraria.Main.tile` implementation using reflection.
-            Terraria.Main.tile =
-                (OTAPI.Tile.ITileCollection)typeof(OTAPI.Hooks).Assembly
-                    .GetType("OTAPI.Callbacks.Terraria.Collection")!
-                    .GetMethod("Create")!
-                    .Invoke(null, null)!;
+            // commented out for now but kept for reference. i will need to come back to this when the collection hook is added
+            //// HACK: replace the original `Terraria.Main.tile` implementation using reflection.
+            //Terraria.Main.tile =
+            //    (Terraria.ITileCollection)typeof(OTAPI.Hooks).Assembly
+            //        .GetType("OTAPI.Callbacks.Terraria.Collection")!
+            //        .GetMethod("Create")!
+            //        .Invoke(null, null)!;
+            Terraria.Main.tile = ModFramework.DefaultCollection<Terraria.ITile>.CreateCollection(Terraria.Main.maxTilesX, Terraria.Main.maxTilesY);
 
-            OTAPI.Hooks.World.IO.PostLoadWorld = null;
-            OTAPI.Hooks.World.IO.PreSaveWorld = null;
+            OTAPI.Hooks.IO.WorldFile.LoadWorld = null;
+            OTAPI.Hooks.IO.WorldFile.SaveWorld = null;
 
             _events.DeregisterHandlers(this, _log);
         }
@@ -179,17 +181,25 @@ namespace Orion.Launcher.World
         // OTAPI hooks
         //
 
-        private void PostLoadWorldHandler(bool loadFromCloud)
+        private ModFramework.HookResult LoadWorldHandler(ModFramework.HookEvent @event, ref bool loadFromCloud, System.Action<bool> originalMethod)
         {
-            var evt = new WorldLoadedEvent(this);
-            _events.Raise(evt, _log);
+            if (@event == ModFramework.HookEvent.After)
+            {
+                var evt = new WorldLoadedEvent(this);
+                _events.Raise(evt, _log);
+            }
+            return ModFramework.HookResult.Continue;
         }
 
-        private OTAPI.HookResult PreSaveWorldHandler(ref bool useCloudSaving, ref bool resetTime)
+        private ModFramework.HookResult SaveWorldHandler(ModFramework.HookEvent @event, ref bool useCloudSaving, ref bool resetTime, System.Action<bool, bool> originalMethod)
         {
-            var evt = new WorldSaveEvent(this);
-            _events.Raise(evt, _log);
-            return evt.IsCanceled ? OTAPI.HookResult.Cancel : OTAPI.HookResult.Continue;
+            if (@event == ModFramework.HookEvent.Before)
+            {
+                var evt = new WorldSaveEvent(this);
+                _events.Raise(evt, _log);
+                return evt.IsCanceled ? ModFramework.HookResult.Cancel : ModFramework.HookResult.Continue;
+            }
+            return ModFramework.HookResult.Continue;
         }
 
         // =============================================================================================================

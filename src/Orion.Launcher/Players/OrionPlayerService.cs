@@ -88,11 +88,11 @@ namespace Orion.Launcher.Players
                 _onSendModuleHandlers[(ushort)moduleId] = MakeOnSendPacketHandler(packetType);
             }
 
-            OTAPI.Hooks.Net.ReceiveData = ReceiveDataHandler;
-            OTAPI.Hooks.Net.SendBytes = SendBytesHandler;
-            OTAPI.Hooks.Net.SendNetData = SendNetDataHandler;
-            OTAPI.Hooks.Player.PreUpdate = PreUpdateHandler;
-            OTAPI.Hooks.Net.RemoteClient.PreReset = PreResetHandler;
+            OTAPI.Hooks.MessageBuffer.GetData = GetDataHandler;
+            OTAPI.Hooks.NetMessage.SendBytes = SendBytesHandler;
+            OTAPI.Hooks.Net.NetManager.SendData = SendNetDataHandler;
+            OTAPI.Hooks.Player.Update = UpdateHandler;
+            OTAPI.Hooks.RemoteClient.Reset = ResetHandler;
 
             _events.RegisterHandlers(this, _log);
 
@@ -115,11 +115,11 @@ namespace Orion.Launcher.Players
 
         public void Dispose()
         {
-            OTAPI.Hooks.Net.ReceiveData = null;
-            OTAPI.Hooks.Net.SendBytes = null;
-            OTAPI.Hooks.Net.SendNetData = null;
-            OTAPI.Hooks.Player.PreUpdate = null;
-            OTAPI.Hooks.Net.RemoteClient.PreReset = null;
+            OTAPI.Hooks.MessageBuffer.GetData = null;
+            OTAPI.Hooks.NetMessage.SendBytes = null;
+            OTAPI.Hooks.Net.NetManager.SendData = null;
+            OTAPI.Hooks.Player.Update = null;
+            OTAPI.Hooks.RemoteClient.Reset = null;
 
             _events.DeregisterHandlers(this, _log);
         }
@@ -131,8 +131,8 @@ namespace Orion.Launcher.Players
         // OTAPI hooks
         //
 
-        private OTAPI.HookResult ReceiveDataHandler(
-            Terraria.MessageBuffer buffer, ref byte packetId, ref int readOffset, ref int start, ref int length)
+        private ModFramework.HookResult GetDataHandler(
+            Terraria.MessageBuffer buffer, ref byte packetId, ref int readOffset, ref int start, ref int length, ref int messageType, ref int maxPackets)
         {
             Debug.Assert(buffer != null);
             Debug.Assert(buffer.whoAmI >= 0 && buffer.whoAmI < Count);
@@ -142,7 +142,7 @@ namespace Orion.Launcher.Players
             // Check `_ignoreGetData` to prevent infinite loops.
             if (_ignoreGetData)
             {
-                return OTAPI.HookResult.Continue;
+                return ModFramework.HookResult.Continue;
             }
 
             PacketHandler handler;
@@ -151,7 +151,7 @@ namespace Orion.Launcher.Players
             {
                 if (span.Length < 3)
                 {
-                    return OTAPI.HookResult.Cancel;
+                    return ModFramework.HookResult.Cancel;
                 }
 
                 var moduleId = Unsafe.ReadUnaligned<ushort>(ref span.At(1));
@@ -163,12 +163,12 @@ namespace Orion.Launcher.Players
             }
 
             handler(buffer.whoAmI, span);
-            return OTAPI.HookResult.Cancel;
+            return ModFramework.HookResult.Cancel;
         }
 
-        private OTAPI.HookResult SendBytesHandler(
-            ref int playerIndex, ref byte[] data, ref int offset, ref int size,
-            ref Terraria.Net.Sockets.SocketSendCallback callback, ref object state)
+        private ModFramework.HookResult SendBytesHandler(
+            ref Terraria.Net.Sockets.ISocket socket, ref int playerIndex, ref byte[] data, ref int offset, ref int size,
+                ref Terraria.Net.Sockets.SocketSendCallback callback, ref object state)
         {
             Debug.Assert(playerIndex >= 0 && playerIndex < Count);
             Debug.Assert(data != null);
@@ -181,11 +181,11 @@ namespace Orion.Launcher.Players
             // The `SendBytes` event is only triggered for non-module packets.
             var handler = _onSendPacketHandlers[packetId] ?? OnSendPacket<UnknownPacket>;
             handler(playerIndex, span);
-            return OTAPI.HookResult.Cancel;
+            return ModFramework.HookResult.Cancel;
         }
 
-        private OTAPI.HookResult SendNetDataHandler(
-            Terraria.Net.NetManager manager, Terraria.Net.Sockets.ISocket socket, ref Terraria.Net.NetPacket packet)
+        private ModFramework.HookResult SendNetDataHandler(
+            ModFramework.HookEvent @event, Terraria.Net.NetManager manager, Terraria.Net.Sockets.ISocket socket, ref Terraria.Net.NetPacket packet, Action<Terraria.Net.Sockets.ISocket, Terraria.Net.NetPacket> originalMethod)
         {
             Debug.Assert(socket != null);
             Debug.Assert(packet.Buffer.Data != null);
@@ -212,34 +212,41 @@ namespace Orion.Launcher.Players
             // The `SendBytes` event is only triggered for module packets.
             var handler = _onSendModuleHandlers[moduleId] ?? OnSendPacket<ModulePacket<UnknownModule>>;
             handler(playerIndex, span);
-            return OTAPI.HookResult.Cancel;
+            return ModFramework.HookResult.Cancel;
         }
 
-        private OTAPI.HookResult PreUpdateHandler(Terraria.Player terrariaPlayer, ref int playerIndex)
+        private ModFramework.HookResult UpdateHandler(ModFramework.HookEvent @event, Terraria.Player terrariaPlayer, ref int playerIndex, Action<int> originalMethod)
         {
-            Debug.Assert(playerIndex >= 0 && playerIndex < Count);
-
-            var player = this[playerIndex];
-            var evt = new PlayerTickEvent(player);
-            _events.Raise(evt, _log);
-            return evt.IsCanceled ? OTAPI.HookResult.Cancel : OTAPI.HookResult.Continue;
-        }
-
-        private OTAPI.HookResult PreResetHandler(Terraria.RemoteClient remoteClient)
-        {
-            Debug.Assert(remoteClient != null);
-            Debug.Assert(remoteClient.Id >= 0 && remoteClient.Id < Count);
-
-            // Check if the client was active since this gets called when setting up `RemoteClient` as well.
-            if (!remoteClient.IsActive)
+            if (@event == ModFramework.HookEvent.Before)
             {
-                return OTAPI.HookResult.Continue;
-            }
+                Debug.Assert(playerIndex >= 0 && playerIndex < Count);
 
-            var player = this[remoteClient.Id];
-            var evt = new PlayerQuitEvent(player);
-            _events.Raise(evt, _log);
-            return OTAPI.HookResult.Continue;
+                var player = this[playerIndex];
+                var evt = new PlayerTickEvent(player);
+                _events.Raise(evt, _log);
+                return evt.IsCanceled ? ModFramework.HookResult.Cancel : ModFramework.HookResult.Continue;
+            }
+            return ModFramework.HookResult.Continue;
+        }
+
+        private ModFramework.HookResult ResetHandler(ModFramework.HookEvent @event, Terraria.RemoteClient remoteClient, Action originalMethod)
+        {
+            if (@event == ModFramework.HookEvent.Before)
+            {
+                Debug.Assert(remoteClient != null);
+                Debug.Assert(remoteClient.Id >= 0 && remoteClient.Id < Count);
+
+                // Check if the client was active since this gets called when setting up `RemoteClient` as well.
+                if (!remoteClient.IsActive)
+                {
+                    return ModFramework.HookResult.Continue;
+                }
+
+                var player = this[remoteClient.Id];
+                var evt = new PlayerQuitEvent(player);
+                _events.Raise(evt, _log);
+            }
+            return ModFramework.HookResult.Continue;
         }
 
         // =============================================================================================================

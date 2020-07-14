@@ -51,8 +51,8 @@ namespace Orion.Launcher.Items
             _items = new WrappedReadOnlyList<OrionItem, Terraria.Item>(
                 Terraria.Main.item.AsMemory(..^1), (itemIndex, terrariaItem) => new OrionItem(itemIndex, terrariaItem));
 
-            OTAPI.Hooks.Item.PreSetDefaultsById = PreSetDefaultsByIdHandler;
-            OTAPI.Hooks.Item.PreUpdate = PreUpdateHandler;
+            OTAPI.Hooks.Item.SetDefaults = SetDefaultsHandler;
+            OTAPI.Hooks.Item.UpdateItem = UpdateItemHandler;
         }
 
         public IItem this[int index] => _items[index];
@@ -77,8 +77,8 @@ namespace Orion.Launcher.Items
 
         public void Dispose()
         {
-            OTAPI.Hooks.Item.PreSetDefaultsById = null;
-            OTAPI.Hooks.Item.PreUpdate = null;
+            OTAPI.Hooks.Item.SetDefaults = null;
+            OTAPI.Hooks.Item.UpdateItem = null;
         }
 
         [ExcludeFromCodeCoverage]
@@ -88,36 +88,43 @@ namespace Orion.Launcher.Items
         // OTAPI hooks
         //
 
-        private OTAPI.HookResult PreSetDefaultsByIdHandler(
-            Terraria.Item terrariaItem, ref int itemId, ref bool noMatCheck)
+        private ModFramework.HookResult SetDefaultsHandler(
+            ModFramework.HookEvent @event, Terraria.Item terrariaItem, ref int itemId, ref bool noMatCheck, Action<int, bool> originalMethod)
         {
-            Debug.Assert(terrariaItem != null);
-
-            var item = GetItem(terrariaItem);
-            var evt = new ItemDefaultsEvent(item) { Id = (ItemId)itemId };
-            _events.Raise(evt, _log);
-            if (evt.IsCanceled)
+            if (@event == ModFramework.HookEvent.Before)
             {
-                return OTAPI.HookResult.Cancel;
-            }
+                Debug.Assert(terrariaItem != null);
 
-            itemId = (int)evt.Id;
-            return OTAPI.HookResult.Continue;
+                var item = GetItem(terrariaItem);
+                var evt = new ItemDefaultsEvent(item) { Id = (ItemId)itemId };
+                _events.Raise(evt, _log);
+                if (evt.IsCanceled)
+                {
+                    return ModFramework.HookResult.Cancel;
+                }
+
+                itemId = (int)evt.Id;
+            }
+            return ModFramework.HookResult.Continue;
         }
 
-        private OTAPI.HookResult PreUpdateHandler(Terraria.Item terrariaItem, ref int itemIndex)
+        private ModFramework.HookResult UpdateItemHandler(ModFramework.HookEvent @event, Terraria.Item terrariaItem, ref int itemIndex, Action<int> originalMethod)
         {
-            Debug.Assert(terrariaItem != null);
-            Debug.Assert(itemIndex >= 0 && itemIndex < Count);
+            if (@event == ModFramework.HookEvent.Before)
+            {
+                Debug.Assert(terrariaItem != null);
+                Debug.Assert(itemIndex >= 0 && itemIndex < Count);
 
-            // Set `whoAmI` since this is never done in the vanilla server, and we depend on this field being set in
-            // `GetItem`.
-            terrariaItem.whoAmI = itemIndex;
+                // Set `whoAmI` since this is never done in the vanilla server, and we depend on this field being set in
+                // `GetItem`.
+                terrariaItem.whoAmI = itemIndex;
 
-            var item = this[itemIndex];
-            var evt = new ItemTickEvent(item);
-            _events.Raise(evt, _log);
-            return evt.IsCanceled ? OTAPI.HookResult.Cancel : OTAPI.HookResult.Continue;
+                var item = this[itemIndex];
+                var evt = new ItemTickEvent(item);
+                _events.Raise(evt, _log);
+                return evt.IsCanceled ? ModFramework.HookResult.Cancel : ModFramework.HookResult.Continue;
+            }
+            return ModFramework.HookResult.Continue;
         }
 
         // Gets an `IItem` instance corresponding to the given Terraria item, avoiding extra allocations if possible.

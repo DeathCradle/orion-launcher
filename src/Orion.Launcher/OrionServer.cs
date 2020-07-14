@@ -92,10 +92,10 @@ namespace Orion.Launcher
             _signs = new Lazy<ISignService>(() => _kernel.Get<ISignService>());
             _world = new Lazy<IWorld>(() => _kernel.Get<IWorld>());
 
-            OTAPI.Hooks.Game.PreInitialize = PreInitializeHandler;
-            OTAPI.Hooks.Game.Started = StartedHandler;
-            OTAPI.Hooks.Game.PreUpdate = PreUpdateHandler;
-            OTAPI.Hooks.Command.Process = ProcessHandler;
+            OTAPI.Hooks.Main.Initialize = InitializeHandler;
+            OTAPI.Hooks.Main.startDedInput = StartedHandler;
+            OTAPI.Hooks.Main.Update = UpdateHandler;
+            OTAPI.Hooks.Main.CommandProcess = ProcessHandler;
         }
 
         public IEventManager Events => _events.Value;
@@ -118,10 +118,10 @@ namespace Orion.Launcher
         {
             _kernel.Dispose();
 
-            OTAPI.Hooks.Game.PreInitialize = null;
-            OTAPI.Hooks.Game.Started = null;
-            OTAPI.Hooks.Game.PreUpdate = null;
-            OTAPI.Hooks.Command.Process = null;
+            OTAPI.Hooks.Main.Initialize = null;
+            OTAPI.Hooks.Main.startDedInput = null;
+            OTAPI.Hooks.Main.Update = null;
+            OTAPI.Hooks.Main.CommandProcess = null;
         }
 
         // =============================================================================================================
@@ -242,29 +242,41 @@ namespace Orion.Launcher
         // OTAPI hooks
         //
 
-        private void PreInitializeHandler()
+        private ModFramework.HookResult InitializeHandler(ModFramework.HookEvent @event)
         {
-            var evt = new ServerInitializeEvent();
-            Events.Raise(evt, _log);
+            if (@event == ModFramework.HookEvent.Before)
+            {
+                var evt = new ServerInitializeEvent();
+                Events.Raise(evt, _log);
+            }
+            return ModFramework.HookResult.Continue;
         }
 
-        private void StartedHandler()
+        private ModFramework.HookResult StartedHandler(ModFramework.HookEvent @event, Action originalMethod)
         {
-            var evt = new ServerStartEvent();
-            Events.Raise(evt, _log);
+            if (@event == ModFramework.HookEvent.Before)
+            {
+                var evt = new ServerStartEvent();
+                Events.Raise(evt, _log);
+            }
+            return ModFramework.HookResult.Continue;
         }
 
-        private void PreUpdateHandler(ref Microsoft.Xna.Framework.GameTime gameTime)
+        private ModFramework.HookResult UpdateHandler(ModFramework.HookEvent @event, ref Microsoft.Xna.Framework.GameTime gameTime)
         {
-            var evt = ServerTickEvent.Instance;
-            Events.Raise(evt, _log);
+            if (@event == ModFramework.HookEvent.Before)
+            {
+                var evt = ServerTickEvent.Instance;
+                Events.Raise(evt, _log);
+            }
+            return ModFramework.HookResult.Continue;
         }
 
-        private OTAPI.HookResult ProcessHandler(string lowered, string input)
+        private ModFramework.HookResult ProcessHandler(string input, string lowered)
         {
             var evt = new ServerCommandEvent(input);
             Events.Raise(evt, _log);
-            return evt.IsCanceled ? OTAPI.HookResult.Cancel : OTAPI.HookResult.Continue;
+            return evt.IsCanceled ? ModFramework.HookResult.Cancel : ModFramework.HookResult.Continue;
         }
     }
 }

@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>netcoreapp5.0</TargetFramework>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <RootNamespace>Orion.Launcher</RootNamespace>
@@ -25,6 +25,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Orion.Launcher\Orion.Launcher.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="OTAPI">
+      <HintPath>..\..\..\Open-Terraria-API\OTAPI.Patcher\bin\Debug\net5.0\OTAPI.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>
